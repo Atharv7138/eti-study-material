@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Quiz Result</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="topbar">
+    <h1>Result</h1>
+    <button id="logoutBtn" class="btn ghost">Logout</button>
+  </header>
+
+  <main class="card page-card result-card">
+    <h2 id="resultTitle">Unit 1 Test Completed</h2>
+    <div class="result-grid">
+      <p><strong>Total Score:</strong> <span id="scoreValue">0</span></p>
+      <p><strong>Total Questions:</strong> <span id="totalValue">0</span></p>
+      <p><strong>Percentage:</strong> <span id="percentValue">0%</span></p>
+    </div>
+    <div class="row-gap center">
+      <button id="retrySetBtn" class="btn primary">Retry Same Set</button>
+      <button id="toSetsBtn" class="btn ghost">Back to Sets</button>
+    </div>
+  </main>
+
+  <script src="users.js"></script>
+  <script src="script.js"></script>
+</body>
+</html>

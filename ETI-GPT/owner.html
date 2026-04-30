@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Owner User Management</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="topbar">
+    <h1>Owner Panel - User Management</h1>
+    <div class="row-gap">
+      <button id="toLandingBtn" class="btn ghost">Back</button>
+      <button id="logoutBtn" class="btn ghost">Logout</button>
+    </div>
+  </header>
+
+  <main class="card page-card">
+    <h2>Create / Edit User</h2>
+    <form id="ownerUserForm" class="form-stack">
+      <label for="ownerUsername">Username</label>
+      <input id="ownerUsername" type="text" required placeholder="e.g. student2">
+
+      <label for="ownerPassword">Password</label>
+      <input id="ownerPassword" type="text" required placeholder="e.g. pass456">
+
+      <label for="ownerRole">Role</label>
+      <select id="ownerRole">
+        <option value="student">Student</option>
+        <option value="owner">Owner</option>
+      </select>
+
+      <button type="submit" class="btn primary">Save User</button>
+    </form>
+
+    <p id="ownerMessage" class="subtext" aria-live="polite"></p>
+
+    <h2>Existing Users</h2>
+    <div id="usersList" class="users-list"></div>
+  </main>
+
+  <script src="users.js"></script>
+  <script src="script.js"></script>
+</body>
+</html>

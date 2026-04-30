@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Select Unit</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="topbar">
+    <h1>MCQ Practice Portal</h1>
+    <button id="logoutBtn" class="btn ghost">Logout</button>
+  </header>
+
+  <main class="card page-card">
+    <h2>Choose a Unit</h2>
+    <div class="row-gap">
+      <button id="manageUsersBtn" class="btn ghost hidden">Manage Users</button>
+    </div>
+    <div class="unit-grid">
+      <button id="unit1Btn" class="btn primary">Unit 1</button>
+      <button id="unit2Btn" class="btn primary">Unit 2</button>
+      <button id="unit3Btn" class="btn primary">Unit 3</button>
+      <button class="btn disabled" disabled>Unit 4 (Locked)</button>
+      <button class="btn disabled" disabled>Unit 5 (Locked)</button>
+    </div>
+    <p class="subtext">Unit 1, Unit 2 and Unit 3 are enabled right now.</p>
+  </main>
+
+  <script src="users.js"></script>
+  <script src="script.js"></script>
+</body>
+</html>

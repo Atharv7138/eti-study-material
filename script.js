@@ -892,7 +892,7 @@ function requireAuth() {
   const currentSessionId = sessionStorage.getItem(CURRENT_SESSION_ID_KEY);
   const activeSession = currentUsername ? getSessionForUser(currentUsername) : null;
   if (!currentUsername || !currentSessionId || !activeSession || activeSession.sessionId !== currentSessionId || isUserBlocked(currentUsername)) {
-    window.location.href = "login.html";
+    window.location.href = "index.html";
     return null;
   }
   return activeSession;
@@ -922,8 +922,8 @@ function acquireTabLockOrBlock() {
   if (!stale && lock.tabId !== tabId) {
     blockUserAccess(username);
     alert("Session already active on another device");
-    if (page !== "login.html") {
-      window.location.href = "login.html";
+    if (page !== "index.html") {
+      window.location.href = "index.html";
     }
     return false;
   }
@@ -966,12 +966,12 @@ function logout() {
   releaseTabLock();
   sessionStorage.removeItem(CURRENT_SESSION_ID_KEY);
   sessionStorage.removeItem(CURRENT_USERNAME_KEY);
-  window.location.href = "login.html";
+  window.location.href = "index.html";
 }
 
 function setupPageSecurity() {
   const page = getPageName();
-  if (page !== "login.html") {
+  if (page !== "index.html") {
     if (!requireAuth()) return false;
     if (!acquireTabLockOrBlock()) return false;
     setInterval(() => {
@@ -1075,7 +1075,7 @@ function initLoginPage() {
     });
     sessionStorage.setItem(CURRENT_SESSION_ID_KEY, sessionId);
     sessionStorage.setItem(CURRENT_USERNAME_KEY, username);
-    window.location.href = "index.html";
+    window.location.href = "dashobord.html";
   });
 }
 
@@ -1138,7 +1138,7 @@ function initUnit1Page() {
   const toLandingBtn = document.getElementById("toLandingBtn");
   if (toLandingBtn) {
     toLandingBtn.addEventListener("click", () => {
-      window.location.href = "index.html";
+      window.location.href = "dashobord.html";
     });
   }
 }
@@ -1161,7 +1161,7 @@ function initUnit2Page() {
   const toLandingBtn = document.getElementById("toLandingBtn");
   if (toLandingBtn) {
     toLandingBtn.addEventListener("click", () => {
-      window.location.href = "index.html";
+      window.location.href = "dashobord.html";
     });
   }
 }
@@ -1184,7 +1184,7 @@ function initUnit3Page() {
   const toLandingBtn = document.getElementById("toLandingBtn");
   if (toLandingBtn) {
     toLandingBtn.addEventListener("click", () => {
-      window.location.href = "index.html";
+      window.location.href = "dashobord.html";
     });
   }
 }
@@ -1207,7 +1207,7 @@ function initUnit4Page() {
   const toLandingBtn = document.getElementById("toLandingBtn");
   if (toLandingBtn) {
     toLandingBtn.addEventListener("click", () => {
-      window.location.href = "index.html";
+      window.location.href = "dashobord.html";
     });
   }
 }
@@ -1230,7 +1230,7 @@ function initUnit5Page() {
   const toLandingBtn = document.getElementById("toLandingBtn");
   if (toLandingBtn) {
     toLandingBtn.addEventListener("click", () => {
-      window.location.href = "index.html";
+      window.location.href = "dashobord.html";
     });
   }
 }
@@ -1397,7 +1397,7 @@ function initResultPage() {
 function initOwnerPage() {
   if (!setupPageSecurity()) return;
   if (!isCurrentUserOwner()) {
-    window.location.href = "index.html";
+    window.location.href = "dashobord.html";
     return;
   }
 
@@ -1505,7 +1505,7 @@ function initOwnerPage() {
   });
 
   toLandingBtn.addEventListener("click", () => {
-    window.location.href = "index.html";
+    window.location.href = "dashobord.html";
   });
 
   renderUsers();
@@ -1521,8 +1521,8 @@ window.addEventListener("storage", (event) => {
   const ownTabLockKey = getTabLockKey(username);
   if (event.key === ACTIVE_SESSIONS_KEY || event.key === ownTabLockKey || event.key === BLOCKED_USERS_KEY) {
     const page = getPageName();
-    if (page !== "login.html" && !acquireTabLockOrBlock()) {
-      window.location.href = "login.html";
+    if (page !== "index.html" && !acquireTabLockOrBlock()) {
+      window.location.href = "index.html";
     }
   }
 });
@@ -1530,8 +1530,8 @@ window.addEventListener("storage", (event) => {
 (function boot() {
   sanitizeOwnerBlocks();
   const page = getPageName();
-  if (page === "login.html" || page === "") initLoginPage();
-  else if (page === "index.html") initLandingPage();
+  if (page === "index.html" || page === "") initLoginPage();
+  else if (page === "dashobord.html") initLandingPage();
   else if (page === "unit1.html") initUnit1Page();
   else if (page === "unit2.html") initUnit2Page();
   else if (page === "unit3.html") initUnit3Page();

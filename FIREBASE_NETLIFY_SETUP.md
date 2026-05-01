@@ -45,6 +45,10 @@ The app allows only one active session at a time. If a user closes the browser
 without logging out, the next login can replace the old session after the
 heartbeat becomes stale.
 
+The app also makes a best-effort logout request when the browser tab/window is
+closed. Browser close events cannot be guaranteed on every device or network, so
+the stale-session fallback is still kept.
+
 When a user tries to log in while another active session exists, the app writes
 a suspected-login entry to:
 

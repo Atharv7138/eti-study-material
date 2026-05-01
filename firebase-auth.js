@@ -13,6 +13,7 @@ firebase.initializeApp(window.firebaseConfig);
 
 const firebaseAuth = firebase.auth();
 const firebaseDb = firebase.firestore();
+let latestFirebaseIdToken = null;
 
 function createSessionId() {
   if (window.crypto && typeof window.crypto.randomUUID === "function") {
@@ -44,6 +45,10 @@ function clearLocalSession() {
   localStorage.removeItem(FIREBASE_SESSION_ID_KEY);
   localStorage.removeItem(FIREBASE_CURRENT_USER_KEY);
 }
+
+firebaseAuth.onIdTokenChanged(async (user) => {
+  latestFirebaseIdToken = user ? await user.getIdToken().catch(() => null) : null;
+});
 
 function redirectToLogin() {
   const page = window.location.pathname.split("/").pop().toLowerCase();
@@ -90,22 +95,32 @@ async function getClientIpAddress() {
 }
 
 async function logSuspectedActiveSessionAttempt(user, existingData, newSessionId, newIpAddress) {
+  const oldIpAddress = existingData.activeSessionIp || existingData.lastLoginIp || null;
+  const normalizedOldIpAddress = oldIpAddress ? String(oldIpAddress).trim() : null;
+  const normalizedNewIpAddress = newIpAddress ? String(newIpAddress).trim() : null;
+
+  if (!normalizedOldIpAddress || !normalizedNewIpAddress || normalizedOldIpAddress === normalizedNewIpAddress) {
+    return false;
+  }
+
   await suspectedLogsCollection().add({
     userId: user.uid,
     email: user.email || existingData.email || null,
     reason: "Active session login attempt",
     previousSessionId: existingData.activeSessionId || null,
     attemptedSessionId: newSessionId,
-    oldIpAddress: existingData.activeSessionIp || existingData.lastLoginIp || null,
-    newIpAddress: newIpAddress || null,
+    oldIpAddress: normalizedOldIpAddress,
+    newIpAddress: normalizedNewIpAddress,
     previousLastSeenAt: existingData.lastSeenAt || null,
     detectedAt: serverNow()
   });
+  return true;
 }
 
 async function loginWithEmailPassword(email, password) {
   const credential = await firebaseAuth.signInWithEmailAndPassword(email, password);
   const user = credential.user;
+  latestFirebaseIdToken = await user.getIdToken().catch(() => null);
   const ref = userDoc(user.uid);
   const snapshot = await ref.get();
   const data = snapshot.exists ? snapshot.data() : {};
@@ -160,6 +175,7 @@ async function logoutCurrentUser(redirect = true) {
       if (data.activeSessionId === localSessionId && !data.blocked) {
         await ref.set({
           activeSessionId: null,
+          activeSessionIp: null,
           lastLogoutAt: serverNow(),
           updatedAt: serverNow()
         }, { merge: true });
@@ -172,6 +188,57 @@ async function logoutCurrentUser(redirect = true) {
   clearLocalSession();
   await firebaseAuth.signOut();
   if (redirect) window.location.href = LOGIN_PAGE;
+}
+
+function sendCloseLogoutWithKeepalive(user) {
+  if (!latestFirebaseIdToken || !window.firebaseConfig || !window.firebaseConfig.projectId) return;
+  const now = new Date().toISOString();
+  const projectId = encodeURIComponent(window.firebaseConfig.projectId);
+  const uid = encodeURIComponent(user.uid);
+  const updateMask = [
+    "activeSessionId",
+    "activeSessionIp",
+    "lastLogoutAt",
+    "updatedAt"
+  ].map((field) => `updateMask.fieldPaths=${encodeURIComponent(field)}`).join("&");
+  const url = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/users/${uid}?${updateMask}`;
+
+  fetch(url, {
+    method: "PATCH",
+    keepalive: true,
+    headers: {
+      Authorization: `Bearer ${latestFirebaseIdToken}`,
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      fields: {
+        activeSessionId: { nullValue: null },
+        activeSessionIp: { nullValue: null },
+        lastLogoutAt: { timestampValue: now },
+        updatedAt: { timestampValue: now }
+      }
+    })
+  }).catch(() => {});
+}
+
+function logoutCurrentUserOnClose() {
+  const user = firebaseAuth.currentUser;
+  const localSessionId = getLocalSessionId();
+  clearLocalSession();
+  if (!user || !localSessionId) return;
+
+  sendCloseLogoutWithKeepalive(user);
+
+  userDoc(user.uid).set({
+    activeSessionId: null,
+    activeSessionIp: null,
+    lastLogoutAt: serverNow(),
+    updatedAt: serverNow()
+  }, { merge: true }).catch((error) => {
+    console.warn("Could not update close logout state", error);
+  });
+
+  firebaseAuth.signOut().catch(() => {});
 }
 
 async function requireFirebaseSession() {
@@ -265,7 +332,13 @@ async function listSuspectedLoginLogsForOwner(limit = 50) {
     .orderBy("detectedAt", "desc")
     .limit(limit)
     .get();
-  return snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
+  return snapshot.docs
+    .map((doc) => ({ id: doc.id, ...doc.data() }))
+    .filter((log) => {
+      const oldIpAddress = log.oldIpAddress ? String(log.oldIpAddress).trim() : null;
+      const newIpAddress = log.newIpAddress ? String(log.newIpAddress).trim() : null;
+      return oldIpAddress && newIpAddress && oldIpAddress !== newIpAddress;
+    });
 }
 
 async function setFirebaseUserBlocked(uid, blocked) {
@@ -282,6 +355,7 @@ window.FirebaseSession = {
   db: firebaseDb,
   loginWithEmailPassword,
   logoutCurrentUser,
+  logoutCurrentUserOnClose,
   requireFirebaseSession,
   getCurrentFirebaseProfile,
   createFirebaseUserAsOwner,

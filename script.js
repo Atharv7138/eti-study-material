@@ -740,12 +740,18 @@ function writeJSON(key, value) {
   localStorage.setItem(key, JSON.stringify(value));
 }
 
+function blockBrowserAlertMessages() {
+  window.alert = (message) => {
+    console.warn("Blocked browser alert:", message);
+  };
+}
+
 function showInlineMessage(targetId, message) {
   const el = document.getElementById(targetId);
   if (el) {
     el.textContent = message;
   } else {
-    alert(message);
+    console.warn(message);
   }
 }
 
@@ -1519,9 +1525,12 @@ async function initOwnerPage() {
   }
 }
 
-window.addEventListener("beforeunload", () => {
-  refreshSessionHeartbeat();
-  refreshTabLock();
+window.addEventListener("pagehide", (event) => {
+  if (event.persisted) return;
+  releaseTabLock();
+  if (window.FirebaseSession) {
+    FirebaseSession.logoutCurrentUserOnClose();
+  }
 });
 
 window.addEventListener("storage", (event) => {
@@ -1536,6 +1545,7 @@ window.addEventListener("storage", (event) => {
 });
 
 (async function boot() {
+  blockBrowserAlertMessages();
   sanitizeOwnerBlocks();
   const page = getPageName();
   if (page === "index.html" || page === "login.html" || page === "") initLoginPage();

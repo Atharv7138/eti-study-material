@@ -218,6 +218,10 @@ input:focus {
   gap: 10px;
 }
 
+.section-heading {
+  margin-top: 24px;
+}
+
 .user-row {
   border: 1px solid #d5e3ff;
   border-radius: 10px;
@@ -231,6 +235,25 @@ input:focus {
 
 .user-info {
   color: #2e4065;
+}
+
+.logs-list {
+  display: grid;
+  gap: 10px;
+}
+
+.log-row {
+  border: 1px solid #ffd1a8;
+  border-left: 4px solid #ff8a3d;
+  border-radius: 10px;
+  padding: 10px;
+  background: #fff9f3;
+}
+
+.log-details {
+  color: #55331c;
+  margin-top: 6px;
+  overflow-wrap: anywhere;
 }
 
 @media (max-width: 640px) {

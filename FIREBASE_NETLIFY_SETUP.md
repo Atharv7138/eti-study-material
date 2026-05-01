@@ -30,7 +30,8 @@ After one owner has `role: "owner"`, open `owner.html` while logged in as that
 owner to add more users. The owner page creates Firebase Authentication users,
 creates their `users/{uid}` profile document, and can block/unblock access.
 
-To unblock a user after a multiple-login block, edit that same document:
+If a user is blocked manually from the owner page, unblock them there or edit
+that same document:
 
 ```json
 {
@@ -39,6 +40,20 @@ To unblock a user after a multiple-login block, edit that same document:
   "activeSessionId": null
 }
 ```
+
+The app allows only one active session at a time. If a user closes the browser
+without logging out, the next login can replace the old session after the
+heartbeat becomes stale.
+
+When a user tries to log in while another active session exists, the app writes
+a suspected-login entry to:
+
+```text
+suspectedLoginLogs/{autoId}
+```
+
+The owner panel shows these entries with the old active-session public IP and
+the new attempted-login public IP when the browser can detect them.
 
 ## Netlify
 

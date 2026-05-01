@@ -1386,6 +1386,7 @@ async function initOwnerPage() {
   }
 
   const usersList = document.getElementById("usersList");
+  const suspectedLogsList = document.getElementById("suspectedLogsList");
   const form = document.getElementById("ownerUserForm");
   const ownerMessage = document.getElementById("ownerMessage");
   const toLandingBtn = document.getElementById("toLandingBtn");
@@ -1420,6 +1421,7 @@ async function initOwnerPage() {
           await FirebaseSession.setFirebaseUserBlocked(user.uid, !isBlocked);
           setOwnerMessage(`${user.email || user.uid} is now ${isBlocked ? "unblocked" : "blocked"}.`);
           await renderUsers();
+          await renderSuspectedLogs();
         } catch (error) {
           setOwnerMessage(error.message || "Could not update user.");
           toggleBlockBtn.disabled = false;
@@ -1430,6 +1432,52 @@ async function initOwnerPage() {
       card.appendChild(info);
       card.appendChild(actions);
       usersList.appendChild(card);
+    });
+  }
+
+  function formatLogTime(value) {
+    if (!value) return "Unknown time";
+    const millis = typeof value.toMillis === "function"
+      ? value.toMillis()
+      : typeof value.seconds === "number"
+        ? value.seconds * 1000
+        : Number(value);
+    if (!millis) return "Unknown time";
+    return new Date(millis).toLocaleString();
+  }
+
+  async function renderSuspectedLogs() {
+    if (!suspectedLogsList) return;
+    const logs = await FirebaseSession.listSuspectedLoginLogsForOwner();
+    suspectedLogsList.innerHTML = "";
+
+    if (!logs.length) {
+      const empty = document.createElement("p");
+      empty.className = "subtext";
+      empty.textContent = "No suspected login attempts yet.";
+      suspectedLogsList.appendChild(empty);
+      return;
+    }
+
+    logs.forEach((log) => {
+      const row = document.createElement("div");
+      row.className = "log-row";
+
+      const title = document.createElement("strong");
+      title.textContent = log.email || log.userId || "Unknown user";
+
+      const details = document.createElement("div");
+      details.className = "log-details";
+      details.textContent = `Old IP: ${log.oldIpAddress || "Unknown"} | New IP: ${log.newIpAddress || "Unknown"} | ${formatLogTime(log.detectedAt)}`;
+
+      const reason = document.createElement("div");
+      reason.className = "subtext";
+      reason.textContent = log.reason || "Active session login attempt";
+
+      row.appendChild(title);
+      row.appendChild(details);
+      row.appendChild(reason);
+      suspectedLogsList.appendChild(row);
     });
   }
 
@@ -1451,6 +1499,7 @@ async function initOwnerPage() {
       setOwnerMessage(`Created user: ${email}`);
       form.reset();
       await renderUsers();
+      await renderSuspectedLogs();
     } catch (error) {
       setOwnerMessage(error.message || "Could not create user.");
     } finally {
@@ -1464,6 +1513,7 @@ async function initOwnerPage() {
 
   try {
     await renderUsers();
+    await renderSuspectedLogs();
   } catch (error) {
     setOwnerMessage(error.message || "Could not load users.");
   }

@@ -1,7 +1,9 @@
 const FIREBASE_SESSION_ID_KEY = "mcq_current_session_id";
 const FIREBASE_CURRENT_USER_KEY = "mcq_current_username";
 const FIREBASE_USERS_COLLECTION = "users";
+const FIREBASE_SUSPECTED_LOGS_COLLECTION = "suspectedLoginLogs";
 const LOGIN_PAGE = "login.html";
+const STALE_SESSION_MS = 2 * 60 * 1000;
 
 if (!window.firebaseConfig) {
   throw new Error("Missing firebaseConfig. Update firebase-config.js before deploying.");
@@ -30,6 +32,10 @@ function userDoc(uid) {
   return firebaseDb.collection(FIREBASE_USERS_COLLECTION).doc(uid);
 }
 
+function suspectedLogsCollection() {
+  return firebaseDb.collection(FIREBASE_SUSPECTED_LOGS_COLLECTION);
+}
+
 function getLocalSessionId() {
   return localStorage.getItem(FIREBASE_SESSION_ID_KEY);
 }
@@ -55,18 +61,46 @@ function waitForAuthUser() {
   });
 }
 
-async function markMultipleLogin(user, existingSessionId, newSessionId) {
-  await userDoc(user.uid).set({
-    uid: user.uid,
-    email: user.email,
-    blocked: true,
-    multipleLoginDetected: true,
-    previousSessionId: existingSessionId || null,
+function timestampToMillis(value) {
+  if (!value) return 0;
+  if (typeof value.toMillis === "function") return value.toMillis();
+  if (typeof value.seconds === "number") return value.seconds * 1000;
+  if (typeof value === "number") return value;
+  return 0;
+}
+
+function isActiveSessionStale(data) {
+  if (!data || !data.activeSessionId) return true;
+  const lastSeenMs = timestampToMillis(data.lastSeenAt || data.lastLoginAt);
+  return !lastSeenMs || Date.now() - lastSeenMs > STALE_SESSION_MS;
+}
+
+async function getClientIpAddress() {
+  try {
+    const response = await fetch("https://api.ipify.org?format=json", {
+      cache: "no-store"
+    });
+    if (!response.ok) return null;
+    const data = await response.json();
+    return data && data.ip ? String(data.ip) : null;
+  } catch (error) {
+    console.warn("Could not detect client IP address", error);
+    return null;
+  }
+}
+
+async function logSuspectedActiveSessionAttempt(user, existingData, newSessionId, newIpAddress) {
+  await suspectedLogsCollection().add({
+    userId: user.uid,
+    email: user.email || existingData.email || null,
+    reason: "Active session login attempt",
+    previousSessionId: existingData.activeSessionId || null,
     attemptedSessionId: newSessionId,
-    blockedReason: "Multiple active login detected",
-    blockedAt: serverNow(),
-    updatedAt: serverNow()
-  }, { merge: true });
+    oldIpAddress: existingData.activeSessionIp || existingData.lastLoginIp || null,
+    newIpAddress: newIpAddress || null,
+    previousLastSeenAt: existingData.lastSeenAt || null,
+    detectedAt: serverNow()
+  });
 }
 
 async function loginWithEmailPassword(email, password) {
@@ -77,6 +111,7 @@ async function loginWithEmailPassword(email, password) {
   const data = snapshot.exists ? snapshot.data() : {};
   const localSessionId = getLocalSessionId();
   const newSessionId = createSessionId();
+  const clientIpAddress = await getClientIpAddress();
 
   if (data.blocked) {
     await firebaseAuth.signOut();
@@ -84,17 +119,23 @@ async function loginWithEmailPassword(email, password) {
     throw new Error("Access blocked. Contact the site owner.");
   }
 
-  if (data.activeSessionId && data.activeSessionId !== localSessionId) {
-    await markMultipleLogin(user, data.activeSessionId, newSessionId);
+  if (data.activeSessionId && data.activeSessionId !== localSessionId && !isActiveSessionStale(data)) {
+    try {
+      await logSuspectedActiveSessionAttempt(user, data, newSessionId, clientIpAddress);
+    } catch (error) {
+      console.warn("Could not write suspected login log", error);
+    }
     await firebaseAuth.signOut();
     clearLocalSession();
-    throw new Error("Multiple login detected. This account has been blocked.");
+    throw new Error("This account is already active on another device or tab. Please logout there first, then try again.");
   }
 
   await ref.set({
     uid: user.uid,
     email: user.email,
     activeSessionId: newSessionId,
+    activeSessionIp: clientIpAddress,
+    lastLoginIp: clientIpAddress,
     blocked: false,
     multipleLoginDetected: false,
     lastLoginAt: serverNow(),
@@ -218,6 +259,15 @@ async function listFirebaseUsersForOwner() {
     .sort((a, b) => String(a.email || "").localeCompare(String(b.email || "")));
 }
 
+async function listSuspectedLoginLogsForOwner(limit = 50) {
+  await requireOwnerProfile();
+  const snapshot = await suspectedLogsCollection()
+    .orderBy("detectedAt", "desc")
+    .limit(limit)
+    .get();
+  return snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
+}
+
 async function setFirebaseUserBlocked(uid, blocked) {
   await requireOwnerProfile();
   await userDoc(uid).set({
@@ -236,6 +286,7 @@ window.FirebaseSession = {
   getCurrentFirebaseProfile,
   createFirebaseUserAsOwner,
   listFirebaseUsersForOwner,
+  listSuspectedLoginLogsForOwner,
   setFirebaseUserBlocked,
   getLocalSessionId
 };

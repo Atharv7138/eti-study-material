@@ -18,6 +18,8 @@ service cloud.firestore {
         'uid',
         'email',
         'activeSessionId',
+        'activeSessionIp',
+        'lastLoginIp',
         'blocked',
         'multipleLoginDetected',
         'lastLoginAt',
@@ -32,6 +34,8 @@ service cloud.firestore {
         'email',
         'role',
         'activeSessionId',
+        'activeSessionIp',
+        'lastLoginIp',
         'blocked',
         'multipleLoginDetected',
         'createdBy',
@@ -43,6 +47,8 @@ service cloud.firestore {
     function userUpdateKeysAreValid() {
       return request.resource.data.diff(resource.data).affectedKeys().hasOnly([
         'activeSessionId',
+        'activeSessionIp',
+        'lastLoginIp',
         'blocked',
         'multipleLoginDetected',
         'previousSessionId',
@@ -60,6 +66,8 @@ service cloud.firestore {
       return request.resource.data.diff(resource.data).affectedKeys().hasOnly([
         'role',
         'activeSessionId',
+        'activeSessionIp',
+        'lastLoginIp',
         'blocked',
         'multipleLoginDetected',
         'updatedAt'
@@ -105,6 +113,28 @@ service cloud.firestore {
         && request.resource.data.email == resource.data.email);
 
       allow delete: if false;
+    }
+
+    match /suspectedLoginLogs/{logId} {
+      allow read: if isOwner();
+
+      allow create: if request.auth != null
+        && request.resource.data.keys().hasOnly([
+          'userId',
+          'email',
+          'reason',
+          'previousSessionId',
+          'attemptedSessionId',
+          'oldIpAddress',
+          'newIpAddress',
+          'previousLastSeenAt',
+          'detectedAt'
+        ])
+        && request.resource.data.userId == request.auth.uid
+        && request.resource.data.email == request.auth.token.email
+        && request.resource.data.reason == 'Active session login attempt';
+
+      allow update, delete: if false;
     }
 
     match /{document=**} {

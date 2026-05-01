@@ -3,28 +3,25 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Select Unit</title>
+  <title>MCQ Practice Login</title>
   <link rel="stylesheet" href="style.css">
 </head>
-<body>
-  <header class="topbar">
-    <h1>MCQ Practice Portal</h1>
-    <button id="logoutBtn" class="btn ghost">Logout</button>
-  </header>
+<body class="auth-body">
+  <main class="card auth-card">
+    <h1>Emerging Trends in CE &amp; IT</h1>
+    <p class="subtext">Sign in to continue your Unit 1 MCQ practice.</p>
 
-  <main class="card page-card">
-    <h2>Choose a Unit</h2>
-    <div class="row-gap">
-      <button id="manageUsersBtn" class="btn ghost hidden">Manage Users</button>
-    </div>
-    <div class="unit-grid">
-      <button id="unit1Btn" class="btn primary">Unit 1</button>
-      <button id="unit2Btn" class="btn primary">Unit 2</button>
-      <button id="unit3Btn" class="btn primary">Unit 3</button>
-      <button id="unit4Btn" class="btn primary">Unit 4</button>
-      <button id="unit5Btn" class="btn primary">Unit 5</button>
-    </div>
-    <p class="subtext">Unit 1, Unit 2, Unit 3, Unit 4 and Unit 5 are enabled right now.</p>
+    <form id="loginForm" class="form-stack">
+      <label for="username">Username</label>
+      <input id="username" name="username" type="text" required placeholder="Enter username">
+
+      <label for="password">Password</label>
+      <input id="password" name="password" type="password" required placeholder="Enter password">
+
+      <button type="submit" class="btn primary">Login</button>
+    </form>
+
+    <p id="loginMessage" class="error-text" aria-live="polite"></p>
   </main>
 
   <script src="users.js"></script>

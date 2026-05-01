@@ -867,6 +867,20 @@ function setSessionForUser(username, sessionObj) {
   writeJSON(ACTIVE_SESSIONS_KEY, sessions);
 }
 
+function createAndStoreSession(username) {
+  const sessionId = `session_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+  const sessionObj = {
+    username,
+    sessionId,
+    lastSeen: Date.now(),
+    expiresAt: Date.now() + SESSION_TIMEOUT_MS
+  };
+  setSessionForUser(username, sessionObj);
+  sessionStorage.setItem(CURRENT_SESSION_ID_KEY, sessionId);
+  sessionStorage.setItem(CURRENT_USERNAME_KEY, username);
+  return sessionObj;
+}
+
 function getCurrentUsername() {
   return sessionStorage.getItem(CURRENT_USERNAME_KEY);
 }
@@ -921,7 +935,7 @@ function acquireTabLockOrBlock() {
   const stale = !lock || (now - (lock.lastSeen || 0) > TAB_LOCK_TIMEOUT_MS);
   if (!stale && lock.tabId !== tabId) {
     blockUserAccess(username);
-    alert("Session already active on another device");
+    alert("Session already active on another device. Access revoked for security violation.");
     if (page !== "index.html") {
       window.location.href = "index.html";
     }
@@ -1039,42 +1053,39 @@ function initLoginPage() {
   const form = document.getElementById("loginForm");
   if (!form) return;
 
-  form.addEventListener("submit", (event) => {
-    event.preventDefault();
+  function validateCredentialsFromForm() {
     const username = document.getElementById("username").value.trim();
     const password = document.getElementById("password").value.trim();
     if (!username || !password) {
       showInlineMessage("loginMessage", "Username and password are required.");
-      return;
+      return null;
     }
-
     const matchedUser = findUser(username);
     if (!matchedUser || matchedUser.password !== password) {
       showInlineMessage("loginMessage", "Invalid username or password.");
-      return;
+      return null;
     }
-
     if (isUserBlocked(username)) {
       showInlineMessage("loginMessage", "Access blocked. Contact owner to re-enable this user.");
-      return;
+      return null;
     }
+    return { username };
+  }
+
+  form.addEventListener("submit", (event) => {
+    event.preventDefault();
+    const auth = validateCredentialsFromForm();
+    if (!auth) return;
+    const { username } = auth;
 
     const existing = getSessionForUser(username);
     if (existing) {
       blockUserAccess(username);
-      showInlineMessage("loginMessage", "Session already active on another device");
+      showInlineMessage("loginMessage", "Security violation detected. Access has been removed.");
       return;
     }
 
-    const sessionId = `session_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
-    setSessionForUser(username, {
-      username,
-      sessionId,
-      lastSeen: Date.now(),
-      expiresAt: Date.now() + SESSION_TIMEOUT_MS
-    });
-    sessionStorage.setItem(CURRENT_SESSION_ID_KEY, sessionId);
-    sessionStorage.setItem(CURRENT_USERNAME_KEY, username);
+    createAndStoreSession(username);
     window.location.href = "dashobord.html";
   });
 }

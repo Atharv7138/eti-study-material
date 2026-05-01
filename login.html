@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MCQ Practice Login</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body class="auth-body">
+  <main class="card auth-card">
+    <h1>Emerging Trends in CE &amp; IT</h1>
+    <p class="subtext">Sign in to continue your Unit 1 MCQ practice.</p>
+
+    <form id="loginForm" class="form-stack">
+      <label for="username">Username</label>
+      <input id="username" name="username" type="text" required placeholder="Enter username">
+
+      <label for="password">Password</label>
+      <input id="password" name="password" type="password" required placeholder="Enter password">
+
+      <button type="submit" class="btn primary">Login</button>
+    </form>
+
+    <p id="loginMessage" class="error-text" aria-live="polite"></p>
+  </main>
+
+  <script src="users.js"></script>
+  <script src="script.js"></script>
+</body>
+</html>

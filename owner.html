@@ -16,13 +16,13 @@
   </header>
 
   <main class="card page-card">
-    <h2>Create / Edit User</h2>
+    <h2>Add New User</h2>
     <form id="ownerUserForm" class="form-stack">
-      <label for="ownerUsername">Username</label>
-      <input id="ownerUsername" type="text" required placeholder="e.g. student2">
+      <label for="ownerUsername">Email</label>
+      <input id="ownerUsername" type="email" required autocomplete="off" placeholder="student@example.com">
 
       <label for="ownerPassword">Password</label>
-      <input id="ownerPassword" type="text" required placeholder="e.g. pass456">
+      <input id="ownerPassword" type="password" required autocomplete="new-password" minlength="6" placeholder="Minimum 6 characters">
 
       <label for="ownerRole">Role</label>
       <select id="ownerRole">
@@ -30,7 +30,7 @@
         <option value="owner">Owner</option>
       </select>
 
-      <button type="submit" class="btn primary">Save User</button>
+      <button type="submit" class="btn primary">Create User</button>
     </form>
 
     <p id="ownerMessage" class="subtext" aria-live="polite"></p>
@@ -39,7 +39,11 @@
     <div id="usersList" class="users-list"></div>
   </main>
 
-  <script src="users.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore-compat.js"></script>
+  <script src="firebase-config.js"></script>
+  <script src="firebase-auth.js"></script>
   <script src="script.js"></script>
 </body>
 </html>

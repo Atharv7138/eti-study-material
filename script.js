@@ -876,13 +876,13 @@ function createAndStoreSession(username) {
     expiresAt: Date.now() + SESSION_TIMEOUT_MS
   };
   setSessionForUser(username, sessionObj);
-  sessionStorage.setItem(CURRENT_SESSION_ID_KEY, sessionId);
-  sessionStorage.setItem(CURRENT_USERNAME_KEY, username);
+  localStorage.setItem(CURRENT_SESSION_ID_KEY, sessionId);
+  localStorage.setItem(CURRENT_USERNAME_KEY, username);
   return sessionObj;
 }
 
 function getCurrentUsername() {
-  return sessionStorage.getItem(CURRENT_USERNAME_KEY);
+  return localStorage.getItem(CURRENT_USERNAME_KEY);
 }
 
 function getCurrentSession() {
@@ -891,7 +891,11 @@ function getCurrentSession() {
   return getSessionForUser(username);
 }
 
-function isCurrentUserOwner() {
+async function isCurrentUserOwner() {
+  if (window.FirebaseSession) {
+    const profile = await FirebaseSession.getCurrentFirebaseProfile();
+    return Boolean(profile && profile.role === "owner" && !profile.blocked);
+  }
   const username = getCurrentUsername();
   const user = username ? findUser(username) : null;
   return Boolean(user && user.role === "owner");
@@ -901,47 +905,30 @@ function getTabLockKey(username) {
   return `${TAB_LOCK_PREFIX}${username || "unknown"}`;
 }
 
-function requireAuth() {
-  const currentUsername = getCurrentUsername();
-  const currentSessionId = sessionStorage.getItem(CURRENT_SESSION_ID_KEY);
-  const activeSession = currentUsername ? getSessionForUser(currentUsername) : null;
-  if (!currentUsername || !currentSessionId || !activeSession || activeSession.sessionId !== currentSessionId || isUserBlocked(currentUsername)) {
-    window.location.href = "index.html";
+async function requireAuth() {
+  if (!window.FirebaseSession) {
+    window.location.href = "login.html";
     return null;
   }
-  return activeSession;
+  return FirebaseSession.requireFirebaseSession();
 }
 
-function refreshSessionHeartbeat() {
-  const username = getCurrentUsername();
-  const activeSession = username ? getSessionForUser(username) : null;
-  const currentSessionId = sessionStorage.getItem(CURRENT_SESSION_ID_KEY);
-  if (!activeSession || activeSession.sessionId !== currentSessionId) {
-    return;
+async function refreshSessionHeartbeat() {
+  if (!window.FirebaseSession || !FirebaseSession.auth.currentUser) return;
+  try {
+    await FirebaseSession.db.collection("users").doc(FirebaseSession.auth.currentUser.uid).set({
+      lastSeenAt: firebase.firestore.FieldValue.serverTimestamp(),
+      updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+    }, { merge: true });
+  } catch (error) {
+    console.warn("Could not refresh Firebase session heartbeat", error);
   }
-  activeSession.lastSeen = Date.now();
-  activeSession.expiresAt = Date.now() + SESSION_TIMEOUT_MS;
-  setSessionForUser(username, activeSession);
 }
 
 function acquireTabLockOrBlock() {
   const username = getCurrentUsername();
   if (!username) return false;
-  const tabId = getTabId();
-  const page = getPageName();
-  const tabLockKey = getTabLockKey(username);
-  const lock = readJSON(tabLockKey);
-  const now = Date.now();
-  const stale = !lock || (now - (lock.lastSeen || 0) > TAB_LOCK_TIMEOUT_MS);
-  if (!stale && lock.tabId !== tabId) {
-    blockUserAccess(username);
-    alert("Session already active on another device. Access revoked for security violation.");
-    if (page !== "index.html") {
-      window.location.href = "index.html";
-    }
-    return false;
-  }
-  writeJSON(tabLockKey, { tabId, lastSeen: now });
+  writeJSON(getTabLockKey(username), { tabId: getTabId(), lastSeen: Date.now() });
   return true;
 }
 
@@ -967,26 +954,22 @@ function releaseTabLock() {
   }
 }
 
-function logout() {
-  const currentUsername = getCurrentUsername();
-  const currentSessionId = sessionStorage.getItem(CURRENT_SESSION_ID_KEY);
-  const userSession = currentUsername ? getSessionForUser(currentUsername) : null;
-  if (userSession && userSession.sessionId === currentSessionId) {
-    const sessions = getActiveSessions();
-    delete sessions[currentUsername];
-    writeJSON(ACTIVE_SESSIONS_KEY, sessions);
-  }
+async function logout() {
   localStorage.removeItem(QUIZ_META_KEY);
   releaseTabLock();
-  sessionStorage.removeItem(CURRENT_SESSION_ID_KEY);
-  sessionStorage.removeItem(CURRENT_USERNAME_KEY);
-  window.location.href = "index.html";
+  localStorage.removeItem(CURRENT_SESSION_ID_KEY);
+  localStorage.removeItem(CURRENT_USERNAME_KEY);
+  if (window.FirebaseSession) {
+    await FirebaseSession.logoutCurrentUser(true);
+    return;
+  }
+  window.location.href = "login.html";
 }
 
-function setupPageSecurity() {
+async function setupPageSecurity() {
   const page = getPageName();
-  if (page !== "index.html") {
-    if (!requireAuth()) return false;
+  if (page !== "index.html" && page !== "login.html" && page !== "") {
+    if (!await requireAuth()) return false;
     if (!acquireTabLockOrBlock()) return false;
     setInterval(() => {
       refreshSessionHeartbeat();
@@ -1024,12 +1007,12 @@ function createFreshQuizState(setIndex) {
 }
 
 function saveQuizState(state) {
-  const sessionId = sessionStorage.getItem(CURRENT_SESSION_ID_KEY);
+  const sessionId = localStorage.getItem(CURRENT_SESSION_ID_KEY);
   writeJSON(buildQuizStateKey(sessionId, state.setIndex), state);
 }
 
 function loadQuizState(setIndex) {
-  const sessionId = sessionStorage.getItem(CURRENT_SESSION_ID_KEY);
+  const sessionId = localStorage.getItem(CURRENT_SESSION_ID_KEY);
   return readJSON(buildQuizStateKey(sessionId, setIndex));
 }
 
@@ -1057,41 +1040,31 @@ function initLoginPage() {
     const username = document.getElementById("username").value.trim();
     const password = document.getElementById("password").value.trim();
     if (!username || !password) {
-      showInlineMessage("loginMessage", "Username and password are required.");
+      showInlineMessage("loginMessage", "Email and password are required.");
       return null;
     }
-    const matchedUser = findUser(username);
-    if (!matchedUser || matchedUser.password !== password) {
-      showInlineMessage("loginMessage", "Invalid username or password.");
-      return null;
-    }
-    if (isUserBlocked(username)) {
-      showInlineMessage("loginMessage", "Access blocked. Contact owner to re-enable this user.");
-      return null;
-    }
-    return { username };
+    return { email: username, password };
   }
 
-  form.addEventListener("submit", (event) => {
+  form.addEventListener("submit", async (event) => {
     event.preventDefault();
     const auth = validateCredentialsFromForm();
     if (!auth) return;
-    const { username } = auth;
+    const submitBtn = form.querySelector("button[type='submit']");
+    if (submitBtn) submitBtn.disabled = true;
 
-    const existing = getSessionForUser(username);
-    if (existing) {
-      blockUserAccess(username);
-      showInlineMessage("loginMessage", "Security violation detected. Access has been removed.");
-      return;
+    try {
+      await FirebaseSession.loginWithEmailPassword(auth.email, auth.password);
+      window.location.href = "dashobord.html";
+    } catch (error) {
+      showInlineMessage("loginMessage", error.message || "Login failed.");
+      if (submitBtn) submitBtn.disabled = false;
     }
-
-    createAndStoreSession(username);
-    window.location.href = "dashobord.html";
   });
 }
 
-function initLandingPage() {
-  if (!setupPageSecurity()) return;
+async function initLandingPage() {
+  if (!await setupPageSecurity()) return;
   const unit1Btn = document.getElementById("unit1Btn");
   const unit2Btn = document.getElementById("unit2Btn");
   const unit3Btn = document.getElementById("unit3Btn");
@@ -1123,7 +1096,7 @@ function initLandingPage() {
     });
   }
   const manageUsersBtn = document.getElementById("manageUsersBtn");
-  if (manageUsersBtn && isCurrentUserOwner()) {
+  if (manageUsersBtn && await isCurrentUserOwner()) {
     manageUsersBtn.classList.remove("hidden");
     manageUsersBtn.addEventListener("click", () => {
       window.location.href = "owner.html";
@@ -1131,8 +1104,8 @@ function initLandingPage() {
   }
 }
 
-function initUnit1Page() {
-  if (!setupPageSecurity()) return;
+async function initUnit1Page() {
+  if (!await setupPageSecurity()) return;
   const setContainer = document.getElementById("setContainer");
   const sets = chunkQuestions(unit1Questions, UNIT1_SET_SIZE);
   sets.forEach((setQuestions, idx) => {
@@ -1154,8 +1127,8 @@ function initUnit1Page() {
   }
 }
 
-function initUnit2Page() {
-  if (!setupPageSecurity()) return;
+async function initUnit2Page() {
+  if (!await setupPageSecurity()) return;
   const setContainer = document.getElementById("setContainer");
   const sets = chunkQuestions(unit2Questions, UNIT2_SET_SIZE);
   sets.forEach((setQuestions, idx) => {
@@ -1177,8 +1150,8 @@ function initUnit2Page() {
   }
 }
 
-function initUnit3Page() {
-  if (!setupPageSecurity()) return;
+async function initUnit3Page() {
+  if (!await setupPageSecurity()) return;
   const setContainer = document.getElementById("setContainer");
   const sets = chunkQuestions(unit3Questions, UNIT3_SET_SIZE);
   sets.forEach((setQuestions, idx) => {
@@ -1200,8 +1173,8 @@ function initUnit3Page() {
   }
 }
 
-function initUnit4Page() {
-  if (!setupPageSecurity()) return;
+async function initUnit4Page() {
+  if (!await setupPageSecurity()) return;
   const setContainer = document.getElementById("setContainer");
   const sets = chunkQuestions(unit4Questions, UNIT4_SET_SIZE);
   sets.forEach((setQuestions, idx) => {
@@ -1223,8 +1196,8 @@ function initUnit4Page() {
   }
 }
 
-function initUnit5Page() {
-  if (!setupPageSecurity()) return;
+async function initUnit5Page() {
+  if (!await setupPageSecurity()) return;
   const setContainer = document.getElementById("setContainer");
   const sets = chunkQuestions(unit5Questions, UNIT5_SET_SIZE);
   sets.forEach((setQuestions, idx) => {
@@ -1262,8 +1235,8 @@ function protectBackButton() {
   });
 }
 
-function initQuizPage() {
-  if (!setupPageSecurity()) return;
+async function initQuizPage() {
+  if (!await setupPageSecurity()) return;
   protectBackButton();
 
   const meta = readJSON(QUIZ_META_KEY);
@@ -1372,8 +1345,8 @@ function initQuizPage() {
   renderQuestion();
 }
 
-function initResultPage() {
-  if (!setupPageSecurity()) return;
+async function initResultPage() {
+  if (!await setupPageSecurity()) return;
   const result = readJSON(RESULT_KEY);
   if (!result) {
     window.location.href = "unit1.html";
@@ -1395,7 +1368,7 @@ function initResultPage() {
 
   retrySetBtn.addEventListener("click", () => {
     writeJSON(QUIZ_META_KEY, { unit: result.unit || "unit1", setIndex: result.setIndex });
-    const sessionId = sessionStorage.getItem(CURRENT_SESSION_ID_KEY);
+    const sessionId = localStorage.getItem(CURRENT_SESSION_ID_KEY);
     localStorage.removeItem(buildQuizStateKey(sessionId, result.setIndex));
     window.location.href = "quiz.html";
   });
@@ -1405,9 +1378,9 @@ function initResultPage() {
   });
 }
 
-function initOwnerPage() {
-  if (!setupPageSecurity()) return;
-  if (!isCurrentUserOwner()) {
+async function initOwnerPage() {
+  if (!await setupPageSecurity()) return;
+  if (!await isCurrentUserOwner()) {
     window.location.href = "dashobord.html";
     return;
   }
@@ -1418,18 +1391,11 @@ function initOwnerPage() {
   const toLandingBtn = document.getElementById("toLandingBtn");
 
   function setOwnerMessage(message) {
-    ownerMessage.textContent = message;
+    if (ownerMessage) ownerMessage.textContent = message;
   }
 
-  function clearUserSessionAndLocks(username) {
-    const sessions = getActiveSessions();
-    delete sessions[username];
-    writeJSON(ACTIVE_SESSIONS_KEY, sessions);
-    localStorage.removeItem(getTabLockKey(username));
-  }
-
-  function renderUsers() {
-    const users = getUsersDb();
+  async function renderUsers() {
+    const users = await FirebaseSession.listFirebaseUsersForOwner();
     usersList.innerHTML = "";
 
     users.forEach((user) => {
@@ -1438,9 +1404,8 @@ function initOwnerPage() {
 
       const info = document.createElement("div");
       info.className = "user-info";
-      const blockedMap = getBlockedUsers();
-      const isBlocked = Boolean(user.blocked || blockedMap[user.username]);
-      info.innerHTML = `<strong>${user.username}</strong> (${user.role}) - ${isBlocked ? "Blocked" : "Active"}`;
+      const isBlocked = Boolean(user.blocked);
+      info.innerHTML = `<strong>${user.email || user.uid}</strong> (${user.role || "student"}) - ${isBlocked ? "Blocked" : "Active"}`;
 
       const actions = document.createElement("div");
       actions.className = "row-gap";
@@ -1448,78 +1413,60 @@ function initOwnerPage() {
       const toggleBlockBtn = document.createElement("button");
       toggleBlockBtn.className = "btn ghost";
       toggleBlockBtn.textContent = isBlocked ? "Unblock" : "Block";
-      toggleBlockBtn.addEventListener("click", () => {
-        const nextUsers = getUsersDb();
-        const idx = nextUsers.findIndex((u) => u.username === user.username);
-        if (idx < 0) return;
-        const nextBlocked = !Boolean(nextUsers[idx].blocked || getBlockedUsers()[user.username]);
-        nextUsers[idx].blocked = nextBlocked;
-        saveUsersDb(nextUsers);
-        const nextMap = getBlockedUsers();
-        if (nextBlocked) {
-          nextMap[user.username] = true;
-          clearUserSessionAndLocks(user.username);
-        } else {
-          delete nextMap[user.username];
+      toggleBlockBtn.disabled = user.uid === FirebaseSession.auth.currentUser.uid;
+      toggleBlockBtn.addEventListener("click", async () => {
+        toggleBlockBtn.disabled = true;
+        try {
+          await FirebaseSession.setFirebaseUserBlocked(user.uid, !isBlocked);
+          setOwnerMessage(`${user.email || user.uid} is now ${isBlocked ? "unblocked" : "blocked"}.`);
+          await renderUsers();
+        } catch (error) {
+          setOwnerMessage(error.message || "Could not update user.");
+          toggleBlockBtn.disabled = false;
         }
-        writeJSON(BLOCKED_USERS_KEY, nextMap);
-        renderUsers();
-      });
-
-      const removeBtn = document.createElement("button");
-      removeBtn.className = "btn warn";
-      removeBtn.textContent = "Remove";
-      removeBtn.disabled = user.username === "owner";
-      removeBtn.addEventListener("click", () => {
-        const nextUsers = getUsersDb().filter((u) => u.username !== user.username);
-        saveUsersDb(nextUsers);
-        const nextMap = getBlockedUsers();
-        delete nextMap[user.username];
-        writeJSON(BLOCKED_USERS_KEY, nextMap);
-        clearUserSessionAndLocks(user.username);
-        renderUsers();
       });
 
       actions.appendChild(toggleBlockBtn);
-      actions.appendChild(removeBtn);
       card.appendChild(info);
       card.appendChild(actions);
       usersList.appendChild(card);
     });
   }
 
-  form.addEventListener("submit", (event) => {
+  form.addEventListener("submit", async (event) => {
     event.preventDefault();
-    const username = document.getElementById("ownerUsername").value.trim();
-    const password = document.getElementById("ownerPassword").value.trim();
+    const email = document.getElementById("ownerUsername").value.trim();
+    const password = document.getElementById("ownerPassword").value;
     const role = document.getElementById("ownerRole").value === "owner" ? "owner" : "student";
+    const submitBtn = form.querySelector("button[type='submit']");
 
-    if (!username || !password) {
-      setOwnerMessage("Username and password are required.");
+    if (!email || !password) {
+      setOwnerMessage("Email and password are required.");
       return;
     }
 
-    const users = getUsersDb();
-    const idx = users.findIndex((u) => u.username === username);
-    if (idx >= 0) {
-      users[idx].password = password;
-      users[idx].role = role;
-      if (typeof users[idx].blocked !== "boolean") users[idx].blocked = false;
-      setOwnerMessage(`Updated user: ${username}`);
-    } else {
-      users.push({ username, password, role, blocked: false });
-      setOwnerMessage(`Created user: ${username}`);
+    if (submitBtn) submitBtn.disabled = true;
+    try {
+      await FirebaseSession.createFirebaseUserAsOwner(email, password, role);
+      setOwnerMessage(`Created user: ${email}`);
+      form.reset();
+      await renderUsers();
+    } catch (error) {
+      setOwnerMessage(error.message || "Could not create user.");
+    } finally {
+      if (submitBtn) submitBtn.disabled = false;
     }
-    saveUsersDb(users);
-    form.reset();
-    renderUsers();
   });
 
   toLandingBtn.addEventListener("click", () => {
     window.location.href = "dashobord.html";
   });
 
-  renderUsers();
+  try {
+    await renderUsers();
+  } catch (error) {
+    setOwnerMessage(error.message || "Could not load users.");
+  }
 }
 
 window.addEventListener("beforeunload", () => {
@@ -1532,23 +1479,23 @@ window.addEventListener("storage", (event) => {
   const ownTabLockKey = getTabLockKey(username);
   if (event.key === ACTIVE_SESSIONS_KEY || event.key === ownTabLockKey || event.key === BLOCKED_USERS_KEY) {
     const page = getPageName();
-    if (page !== "index.html" && !acquireTabLockOrBlock()) {
-      window.location.href = "index.html";
+    if (page !== "index.html" && page !== "login.html" && !acquireTabLockOrBlock()) {
+      window.location.href = "login.html";
     }
   }
 });
 
-(function boot() {
+(async function boot() {
   sanitizeOwnerBlocks();
   const page = getPageName();
-  if (page === "index.html" || page === "") initLoginPage();
-  else if (page === "dashobord.html") initLandingPage();
-  else if (page === "unit1.html") initUnit1Page();
-  else if (page === "unit2.html") initUnit2Page();
-  else if (page === "unit3.html") initUnit3Page();
-  else if (page === "unit4.html") initUnit4Page();
-  else if (page === "unit5.html") initUnit5Page();
-  else if (page === "quiz.html") initQuizPage();
-  else if (page === "result.html") initResultPage();
-  else if (page === "owner.html") initOwnerPage();
+  if (page === "index.html" || page === "login.html" || page === "") initLoginPage();
+  else if (page === "dashobord.html") await initLandingPage();
+  else if (page === "unit1.html") await initUnit1Page();
+  else if (page === "unit2.html") await initUnit2Page();
+  else if (page === "unit3.html") await initUnit3Page();
+  else if (page === "unit4.html") await initUnit4Page();
+  else if (page === "unit5.html") await initUnit5Page();
+  else if (page === "quiz.html") await initQuizPage();
+  else if (page === "result.html") await initResultPage();
+  else if (page === "owner.html") await initOwnerPage();
 })();

@@ -1,0 +1,114 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isSignedInUser(userId) {
+      return request.auth != null && request.auth.uid == userId;
+    }
+
+    function isOwner() {
+      return request.auth != null
+        && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'owner'
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.blocked != true;
+    }
+
+    function userCreateKeysAreValid() {
+      return request.resource.data.keys().hasOnly([
+        'uid',
+        'email',
+        'activeSessionId',
+        'blocked',
+        'multipleLoginDetected',
+        'lastLoginAt',
+        'lastSeenAt',
+        'updatedAt'
+      ]);
+    }
+
+    function ownerCreateKeysAreValid() {
+      return request.resource.data.keys().hasOnly([
+        'uid',
+        'email',
+        'role',
+        'activeSessionId',
+        'blocked',
+        'multipleLoginDetected',
+        'createdBy',
+        'createdAt',
+        'updatedAt'
+      ]);
+    }
+
+    function userUpdateKeysAreValid() {
+      return request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+        'activeSessionId',
+        'blocked',
+        'multipleLoginDetected',
+        'previousSessionId',
+        'attemptedSessionId',
+        'blockedReason',
+        'blockedAt',
+        'lastLoginAt',
+        'lastLogoutAt',
+        'lastSeenAt',
+        'updatedAt'
+      ]);
+    }
+
+    function ownerUpdateKeysAreValid() {
+      return request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+        'role',
+        'activeSessionId',
+        'blocked',
+        'multipleLoginDetected',
+        'updatedAt'
+      ]);
+    }
+
+    function identityIsUnchanged() {
+      return request.resource.data.uid == resource.data.uid
+        && request.resource.data.email == resource.data.email
+        && (!('role' in request.resource.data) || request.resource.data.role == resource.data.role);
+    }
+
+    function blockedCanOnlyMoveToTrue() {
+      return request.resource.data.blocked == resource.data.blocked
+        || (resource.data.blocked != true && request.resource.data.blocked == true);
+    }
+
+    match /users/{userId} {
+      allow read: if isSignedInUser(userId) || isOwner();
+
+      allow create: if (isSignedInUser(userId)
+        && userCreateKeysAreValid()
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.email == request.auth.token.email
+        && request.resource.data.blocked == false
+        && request.resource.data.multipleLoginDetected == false)
+        || (isOwner()
+        && ownerCreateKeysAreValid()
+        && request.resource.data.uid == userId
+        && request.resource.data.createdBy == request.auth.uid
+        && request.resource.data.role in ['student', 'owner']
+        && request.resource.data.blocked == false
+        && request.resource.data.multipleLoginDetected == false);
+
+      allow update: if (isSignedInUser(userId)
+        && resource.data.blocked != true
+        && userUpdateKeysAreValid()
+        && identityIsUnchanged()
+        && blockedCanOnlyMoveToTrue())
+        || (isOwner()
+        && ownerUpdateKeysAreValid()
+        && request.resource.data.uid == resource.data.uid
+        && request.resource.data.email == resource.data.email);
+
+      allow delete: if false;
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
